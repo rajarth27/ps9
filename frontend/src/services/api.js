@@ -55,10 +55,11 @@ async function safeFetch(endpoint, options = {}, timeoutMs = 2500) {
  */
 export async function getSystemStatus() {
   const candidateUrls = [
-    getBaseUrl(),
-    'http://127.0.0.1:8001',
-    'http://127.0.0.1:8000'
-  ];
+  getBaseUrl(),
+  'https://ps9-backend.onrender.com',
+  'http://127.0.0.1:8001',
+  'http://127.0.0.1:8000'
+];
   const uniqueUrls = [...new Set(candidateUrls)];
 
   for (const url of uniqueUrls) {
