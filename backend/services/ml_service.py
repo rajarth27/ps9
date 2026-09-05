@@ -208,23 +208,49 @@ def predict_shortfall(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     global production_model, production_features
 
-    target = float(data.get("production_target") or data.get("target_production") or 10000.0)
+    target = float(data.get("production_target") or data.get("target_production") or data.get("productionTarget") or 10000.0)
 
-    # Normalize inputs: support both 0-1 ratio and 0-100 percentage
-    avail_raw = float(data.get("equipment_availability", 85.0))
+    # Normalize inputs: support both 0-1 ratio and 0-100 percentage, and both snake_case/camelCase
+    avail_raw = float(
+        data.get("equipment_availability") if data.get("equipment_availability") is not None
+        else data.get("equipmentAvailability", 85.0)
+    )
     avail = avail_raw / 100.0 if avail_raw > 1.0 else avail_raw
 
-    soil_raw = float(data.get("soil_moisture", 50.0))
+    soil_raw = float(
+        data.get("soil_moisture") if data.get("soil_moisture") is not None
+        else data.get("soilMoisture", 50.0)
+    )
     soil_moist = soil_raw / 100.0 if soil_raw > 1.0 else soil_raw
 
-    downtime = float(data.get("equipment_downtime", 5.0))
-    maint = float(data.get("maintenance_hours", 4.0))
-    drill_delay = float(data.get("drilling_delay", 1.5))
-    blast_delay = float(data.get("blast_delay", 1.0))
-    rainfall = float(data.get("rainfall", 20.0))
+    downtime = float(
+        data.get("equipment_downtime") if data.get("equipment_downtime") is not None
+        else data.get("equipmentDowntime", 5.0)
+    )
+    maint = float(
+        data.get("maintenance_hours") if data.get("maintenance_hours") is not None
+        else data.get("maintenanceHours", 4.0)
+    )
+    drill_delay = float(
+        data.get("drilling_delay") if data.get("drilling_delay") is not None
+        else data.get("drillingDelay", 1.5)
+    )
+    blast_delay = float(
+        data.get("blast_delay") if data.get("blast_delay") is not None
+        else data.get("blastDelay", 1.0)
+    )
+    rainfall = float(
+        data.get("rainfall") if data.get("rainfall") is not None
+        else data.get("rainfall_mm", 20.0)
+    )
     temp = float(data.get("temperature", 30.0))
-    trucks = int(data.get("haulage_truck_count") or data.get("truck_count") or 25)
-    haul_delay = float(data.get("haulage_delay", 0.5))
+    trucks = int(
+        data.get("haulage_truck_count") or data.get("truck_count") or data.get("haulageTruckCount") or 25
+    )
+    haul_delay = float(
+        data.get("haulage_delay") if data.get("haulage_delay") is not None
+        else data.get("haulageDelay", 0.5)
+    )
 
     # Construct input feature map
     input_row = {

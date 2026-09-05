@@ -15,6 +15,19 @@ import {
 import { CURRENT_CONDITIONS } from '../../data/production';
 
 export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
+  const safeData = data || {};
+  const rainfall = safeData.rainfall ?? safeData.rainfall_mm ?? 42;
+  const soilMoisture = safeData.soilMoisture ?? safeData.soil_moisture ?? 61;
+  const temperature = safeData.temperature ?? 31;
+  const equipmentAvailability = safeData.equipmentAvailability ?? safeData.equipment_availability ?? 84;
+  const equipmentDowntime = safeData.equipmentDowntime ?? safeData.equipment_downtime ?? 6.5;
+  const equipmentUtilization = safeData.equipmentUtilization ?? safeData.equipment_utilization ?? 78;
+  const maintenanceHours = safeData.maintenanceHours ?? safeData.maintenance_hours ?? 5.2;
+  const haulageTruckCount = safeData.haulageTruckCount ?? safeData.haulage_truck_count ?? safeData.truck_count ?? 27;
+  const drillingDelay = safeData.drillingDelay ?? safeData.drilling_delay ?? 1.8;
+  const blastDelay = safeData.blastDelay ?? safeData.blast_delay ?? 2.5;
+  const productionTarget = safeData.productionTarget ?? safeData.production_target ?? safeData.target_production ?? 10000;
+
   return (
     <div className="glass-panel p-5 rounded-xl border border-slate-800">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-800/80">
@@ -47,9 +60,11 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <CloudRain className="w-3.5 h-3.5 text-sky-400" />
           </div>
           <div className="text-lg font-bold font-mono text-white">
-            {data.rainfall} <span className="text-xs font-normal text-slate-400">mm</span>
+            {rainfall} <span className="text-xs font-normal text-slate-400">mm</span>
           </div>
-          <div className="text-[10px] text-amber-400 mt-0.5 font-medium">Elevated (+27mm)</div>
+          <div className="text-[10px] text-amber-400 mt-0.5 font-medium">
+            {rainfall > 35 ? 'Heavy Downpour' : rainfall > 15 ? 'Moderate Inflow' : 'Normal'}
+          </div>
         </div>
 
         {/* Weather: Soil Moisture */}
@@ -59,7 +74,7 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Droplets className="w-3.5 h-3.5 text-sky-400" />
           </div>
           <div className="text-lg font-bold font-mono text-white">
-            {data.soilMoisture} <span className="text-xs font-normal text-slate-400">%</span>
+            {soilMoisture} <span className="text-xs font-normal text-slate-400">%</span>
           </div>
           <div className="text-[10px] text-amber-400 mt-0.5 font-medium">Bench Saturation</div>
         </div>
@@ -71,7 +86,7 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Thermometer className="w-3.5 h-3.5 text-orange-400" />
           </div>
           <div className="text-lg font-bold font-mono text-white">
-            {data.temperature} <span className="text-xs font-normal text-slate-400">°C</span>
+            {temperature} <span className="text-xs font-normal text-slate-400">°C</span>
           </div>
           <div className="text-[10px] text-emerald-400 mt-0.5 font-medium">Nominal Operating</div>
         </div>
@@ -83,9 +98,11 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Gauge className="w-3.5 h-3.5 text-amber-400" />
           </div>
           <div className="text-lg font-bold font-mono text-white">
-            {data.equipmentAvailability} <span className="text-xs font-normal text-slate-400">%</span>
+            {equipmentAvailability} <span className="text-xs font-normal text-slate-400">%</span>
           </div>
-          <div className="text-[10px] text-amber-400 mt-0.5 font-medium">-6% vs Target</div>
+          <div className="text-[10px] text-amber-400 mt-0.5 font-medium">
+            {equipmentAvailability < 85 ? '-6% vs Target' : 'Optimum'}
+          </div>
         </div>
 
         {/* Equipment: Downtime */}
@@ -95,9 +112,11 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Clock className="w-3.5 h-3.5 text-rose-400" />
           </div>
           <div className="text-lg font-bold font-mono text-rose-300">
-            {data.equipmentDowntime} <span className="text-xs font-normal text-slate-400">hrs</span>
+            {equipmentDowntime} <span className="text-xs font-normal text-slate-400">hrs</span>
           </div>
-          <div className="text-[10px] text-rose-400 mt-0.5 font-medium">Critical (EX-017)</div>
+          <div className="text-[10px] text-rose-400 mt-0.5 font-medium">
+            {equipmentDowntime > 8 ? 'Critical (EX-017)' : 'Routine Cycle'}
+          </div>
         </div>
 
         {/* Equipment: Utilization */}
@@ -107,7 +126,7 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Cpu className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="text-lg font-bold font-mono text-white">
-            {data.equipmentUtilization} <span className="text-xs font-normal text-slate-400">%</span>
+            {equipmentUtilization} <span className="text-xs font-normal text-slate-400">%</span>
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Active fleet capacity</div>
         </div>
@@ -119,7 +138,7 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Wrench className="w-3.5 h-3.5 text-amber-400" />
           </div>
           <div className="text-lg font-bold font-mono text-white">
-            {data.maintenanceHours} <span className="text-xs font-normal text-slate-400">hrs</span>
+            {maintenanceHours} <span className="text-xs font-normal text-slate-400">hrs</span>
           </div>
           <div className="text-[10px] text-amber-400 mt-0.5 font-medium">Crusher & Tipper shop</div>
         </div>
@@ -131,9 +150,9 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Truck className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="text-lg font-bold font-mono text-white">
-            {data.haulageTruckCount} <span className="text-xs font-normal text-slate-400">/ 30</span>
+            {haulageTruckCount} <span className="text-xs font-normal text-slate-400">/ 30</span>
           </div>
-          <div className="text-[10px] text-emerald-400 mt-0.5 font-medium">27 Active / 2 Down</div>
+          <div className="text-[10px] text-emerald-400 mt-0.5 font-medium">{haulageTruckCount} Active</div>
         </div>
 
         {/* Drilling Delay */}
@@ -143,7 +162,7 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Clock className="w-3.5 h-3.5 text-amber-400" />
           </div>
           <div className="text-lg font-bold font-mono text-white">
-            {data.drillingDelay} <span className="text-xs font-normal text-slate-400">hrs</span>
+            {drillingDelay} <span className="text-xs font-normal text-slate-400">hrs</span>
           </div>
           <div className="text-[10px] text-amber-400 mt-0.5 font-medium">Drift C manifold</div>
         </div>
@@ -155,7 +174,7 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Flame className="w-3.5 h-3.5 text-rose-400" />
           </div>
           <div className="text-lg font-bold font-mono text-white">
-            {data.blastDelay} <span className="text-xs font-normal text-slate-400">hr</span>
+            {blastDelay} <span className="text-xs font-normal text-slate-400">hr</span>
           </div>
           <div className="text-[10px] text-amber-400 mt-0.5 font-medium">Gas clearance check</div>
         </div>
@@ -167,7 +186,7 @@ export function CurrentConditions({ data = CURRENT_CONDITIONS }) {
             <Target className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="text-lg font-bold font-mono text-emerald-300">
-            {data.productionTarget.toLocaleString()} <span className="text-xs font-normal text-slate-400">T / day</span>
+            {Number(productionTarget).toLocaleString()} <span className="text-xs font-normal text-slate-400">T / day</span>
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Daily Mining Schedule Mandate</div>
         </div>

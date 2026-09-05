@@ -6,7 +6,7 @@
   :root {
     color-scheme: dark;
   }
-  
+
   body {
     background-color: #070a0f;
     color: #f1f5f9;
@@ -18,13 +18,16 @@
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #0d121c;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #1e293b;
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }

@@ -26,10 +26,15 @@ def build_dashboard_payload(db: Session, mine_id: str) -> Dict[str, Any]:
     summary = get_production_summary(db, mine.id)
     trends = get_production_trends(db, "7d")
 
-    target = float(mine.daily_target)
-    predicted = float(mine.predicted_production)
-    shortfall = float(mine.expected_shortfall)
-    shortfall_pct = float(mine.shortfall_pct)
+    # Run live ML inference with loaded model on current operational conditions
+    from services import ml_service
+    live_ml = ml_service.predict_shortfall(summary["conditions"])
+
+    predicted = float(live_ml.get("predicted_production", mine.predicted_production))
+    shortfall = float(live_ml.get("expected_shortfall", mine.expected_shortfall))
+    shortfall_pct = float(live_ml.get("shortfall_percentage", mine.shortfall_pct))
+    risk_level = live_ml.get("risk_level", mine.risk_level)
+    confidence = int(live_ml.get("confidence", mine.confidence))
 
     kpis = {
         "estimatedReserveMT": mine.reserve_mt,
@@ -37,26 +42,31 @@ def build_dashboard_payload(db: Session, mine_id: str) -> Dict[str, Any]:
         "predictedProductionTonnes": predicted,
         "expectedShortfallTonnes": shortfall,
         "shortfallPercentage": shortfall_pct,
-        "overallRisk": mine.risk_level,
-        "confidence": mine.confidence
+        "overallRisk": risk_level,
+        "confidence": confidence
     }
+
+    # Generate dynamic concerns based on live conditions and SHAP root causes
+    live_concerns = live_ml.get("recommendations", [])
+    if not live_concerns:
+        live_concerns = [
+            f"Precipitation ({weather.rainfall if weather else 42.0} mm) impacting haul ramp traction",
+            "Equipment availability monitored below optimum target",
+            "Blast clearance window active"
+        ]
 
     shortfall_forecast = {
         "expectedShortfall": shortfall,
-        "risk": mine.risk_level,
-        "confidence": mine.confidence,
-        "concerns": [
-            "Equipment downtime on primary excavator (EX-017)",
-            f"Precipitation ({weather.rainfall if weather else 42.0} mm) slowing haulage",
-            "Deep stope blasting clearance window"
-        ]
+        "risk": risk_level,
+        "confidence": confidence,
+        "concerns": live_concerns[:3]
     }
 
     return {
         "mine": format_mine_response(mine),
         "kpis": kpis,
         "currentConditions": summary["conditions"],
-        "factors": summary["factors"],
+        "factors": live_ml.get("contributing_factors") or summary["factors"],
         "history": trends["history"],
         "shortfallForecast": shortfall_forecast
     }

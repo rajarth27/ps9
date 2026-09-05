@@ -67,21 +67,40 @@ def get_production_trends(db: Session, timeframe: str = "7d") -> Dict[str, Any]:
 
 def get_production_summary(db: Session, mine_id: str = "BALAGHAT-01") -> Dict[str, Any]:
     """Get current production status, environmental conditions, and operational factors."""
+    from models.weather import Weather
     mine = db.query(Mine).filter(Mine.id == mine_id).first()
+    weather = db.query(Weather).filter(Weather.mine_id == mine_id).first() if mine else None
+
+    rain_val = float(weather.rainfall) if weather and weather.rainfall is not None else 42.0
+    soil_val = float(weather.soil_moisture) if weather and weather.soil_moisture is not None else 61.0
+    temp_val = float(weather.temperature) if weather and weather.temperature is not None else 31.0
+    target_val = float(mine.daily_target) if mine and mine.daily_target is not None else 10000.0
 
     return {
         "conditions": {
-            "rainfall": 42.0,
-            "soilMoisture": 61.0,
+            "rainfall": rain_val,
+            "rainfall_mm": rain_val,
+            "soil_moisture": soil_val,
+            "soilMoisture": soil_val,
+            "temperature": temp_val,
+            "equipment_downtime": 6.5,
             "equipmentDowntime": 6.5,
+            "blast_delay": 2.5,
             "blastDelay": 2.5,
-            "temperature": 31.0,
+            "haulage_truck_count": 24,
             "haulageTruckCount": 24,
+            "truck_count": 24,
+            "equipment_availability": 84.0,
             "equipmentAvailability": 84.0,
+            "equipment_utilization": 78.0,
             "equipmentUtilization": 78.0,
+            "maintenance_hours": 5.2,
             "maintenanceHours": 5.2,
+            "drilling_delay": 1.8,
             "drillingDelay": 1.8,
-            "productionTarget": float(mine.daily_target) if mine else 10000.0
+            "production_target": target_val,
+            "target_production": target_val,
+            "productionTarget": target_val
         },
         "factors": [
             {

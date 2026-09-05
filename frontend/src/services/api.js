@@ -15,9 +15,20 @@ import { AI_RECOMMENDATIONS } from '../data/recommendations';
 import { calculateMLShortfallPrediction, calculateMLReservePrediction } from '../data/predictions';
 
 
-const DEFAULT_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'https://ps9-backend.onrender.com';
+const isLocalHost = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const DEFAULT_BASE_URL = isLocalHost
+  ? 'http://127.0.0.1:8001'
+  : (import.meta.env?.VITE_API_BASE_URL || 'https://ps9-backend.onrender.com');
+
 export function getBaseUrl() {
-  return localStorage.getItem('manganai_backend_url') || DEFAULT_BASE_URL;
+  const saved = localStorage.getItem('manganai_backend_url');
+  // If running on localhost and saved points to remote, prefer local
+  if (isLocalHost && (!saved || saved.includes('onrender.com'))) {
+    return 'http://127.0.0.1:8001';
+  }
+  return saved || DEFAULT_BASE_URL;
 }
 
 export function setBaseUrl(url) {
@@ -28,9 +39,9 @@ export function setBaseUrl(url) {
 const delay = (ms = 350) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Safe fetch wrapper with timeout
-async function safeFetch(endpoint, options = {}, timeoutMs = 10000) {
+async function safeFetch(endpoint, options = {}, timeoutMs = 4000) {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), 10000);
+  const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${getBaseUrl()}${endpoint}`, {
       ...options,
@@ -171,14 +182,29 @@ export async function getExplorationZone(zoneId) {
  * 6. ML Reserve Prediction
  */
 export async function predictReserve(inputs) {
+  const normalizedInputs = {
+    ...inputs,
+    latitude: Number(inputs.latitude ?? inputs.lat ?? 21.8710),
+    longitude: Number(inputs.longitude ?? inputs.lon ?? 80.1830),
+    lat: Number(inputs.latitude ?? inputs.lat ?? 21.8710),
+    lon: Number(inputs.longitude ?? inputs.lon ?? 80.1830),
+  };
   try {
     return await safeFetch('/api/ml/predict-reserve', {
       method: 'POST',
-      body: JSON.stringify(inputs)
-    });
+      body: JSON.stringify(normalizedInputs)
+    }, 4000);
   } catch {
-    await delay(700); // realistic inference calculation time
-    return calculateMLReservePrediction(inputs);
+    try {
+      return await safeFetch('/predict_reserve', {
+        method: 'POST',
+        body: JSON.stringify(normalizedInputs)
+      }, 4000);
+    } catch (err) {
+      console.warn('[API] ML predictReserve fallback to local heuristic calculation:', err);
+      await delay(400);
+      return calculateMLReservePrediction(normalizedInputs);
+    }
   }
 }
 
@@ -211,17 +237,50 @@ export async function getProductionTrends(timeframe = '7d') {
 
 /**
  * 9. ML Production Shortfall Prediction
- * Takes all 11 required input parameters.
+ * Takes all 11 required input parameters with robust field normalization.
  */
 export async function predictShortfall(payload) {
+  const rainVal = Number(payload.rainfall ?? payload.rainfall_mm ?? 20);
+  const soilVal = Number(payload.soil_moisture ?? payload.soilMoisture ?? 50);
+  const availVal = Number(payload.equipment_availability ?? payload.equipmentAvailability ?? 85);
+  const downVal = Number(payload.equipment_downtime ?? payload.equipmentDowntime ?? 5);
+  const truckVal = Number(payload.haulage_truck_count ?? payload.truck_count ?? payload.haulageTruckCount ?? 25);
+  const targetVal = Number(payload.production_target ?? payload.target_production ?? payload.productionTarget ?? 10000);
+
+  const normalizedPayload = {
+    ...payload,
+    rainfall: rainVal,
+    rainfall_mm: rainVal,
+    soil_moisture: soilVal,
+    soilMoisture: soilVal,
+    equipment_availability: availVal,
+    equipmentAvailability: availVal,
+    equipment_downtime: downVal,
+    equipmentDowntime: downVal,
+    haulage_truck_count: truckVal,
+    truck_count: truckVal,
+    haulageTruckCount: truckVal,
+    production_target: targetVal,
+    target_production: targetVal,
+    productionTarget: targetVal
+  };
+
   try {
     return await safeFetch('/api/ml/predict-shortfall', {
       method: 'POST',
-      body: JSON.stringify(payload)
-    });
+      body: JSON.stringify(normalizedPayload)
+    }, 4000);
   } catch {
-    await delay(800); // "Analyzing Mining Conditions..."
-    return calculateMLShortfallPrediction(payload);
+    try {
+      return await safeFetch('/predict_shortfall', {
+        method: 'POST',
+        body: JSON.stringify(normalizedPayload)
+      }, 4000);
+    } catch (err) {
+      console.warn('[API] ML predictShortfall fallback to local simulation:', err);
+      await delay(400);
+      return calculateMLShortfallPrediction(normalizedPayload);
+    }
   }
 }
 
