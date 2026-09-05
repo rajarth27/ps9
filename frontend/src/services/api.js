@@ -28,9 +28,9 @@ export function setBaseUrl(url) {
 const delay = (ms = 350) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Safe fetch wrapper with timeout
-async function safeFetch(endpoint, options = {}, timeoutMs = 2500) {
+async function safeFetch(endpoint, options = {}, timeoutMs = 10000) {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+  const id = setTimeout(() => controller.abort(), 10000);
   try {
     const res = await fetch(`${getBaseUrl()}${endpoint}`, {
       ...options,
