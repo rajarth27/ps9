@@ -13,6 +13,10 @@ import { CURRENT_WEATHER, WEATHER_FORECAST, ENVIRONMENTAL_IMPACTS, SATELLITE_LAY
 import { RISK_OVERVIEW, RISK_CONTRIBUTORS, SEVEN_DAY_RISK_FORECAST } from '../data/risk';
 import { AI_RECOMMENDATIONS } from '../data/recommendations';
 import { calculateMLShortfallPrediction, calculateMLReservePrediction } from '../data/predictions';
+<<<<<<< HEAD
+=======
+
+>>>>>>> cb039e47d8ea81776507bc6290573e77a74ba2ed
 const DEFAULT_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'https://ps9-backend.onrender.com';
 
 export function getBaseUrl() {
@@ -54,11 +58,19 @@ async function safeFetch(endpoint, options = {}, timeoutMs = 2500) {
  */
 export async function getSystemStatus() {
   const candidateUrls = [
+<<<<<<< HEAD
     getBaseUrl(),
     'https://ps9-backend.onrender.com',
     'http://127.0.0.1:8001',
     'http://127.0.0.1:8000'
   ];
+=======
+  getBaseUrl(),
+  'https://ps9-backend.onrender.com',
+  'http://127.0.0.1:8001',
+  'http://127.0.0.1:8000'
+];
+>>>>>>> cb039e47d8ea81776507bc6290573e77a74ba2ed
   const uniqueUrls = [...new Set(candidateUrls)];
 
   for (const url of uniqueUrls) {
