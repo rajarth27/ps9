@@ -44,3 +44,14 @@ def run_shortfall_prediction(
     Accepts 11 mine operational and environmental telemetry parameters.
     """
     return predict_shortfall(db, request_data)
+
+
+@router.post("/simulate")
+@router.post("/api/ml/simulate")
+def simulate_scenario(request_data: ShortfallPredictionRequest):
+    """
+    What-if scenario simulator — runs scenario through the trained model.
+    """
+    from services.ml_service import simulate_scenario as sim
+    return sim(request_data.model_dump())
+
