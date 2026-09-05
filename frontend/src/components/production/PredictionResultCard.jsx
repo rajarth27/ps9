@@ -25,9 +25,15 @@ export function PredictionResultCard({ result, inputs }) {
         <div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-            <span className="text-xs font-mono font-bold tracking-widest text-emerald-400 uppercase">
-              AI Production Forecast
-            </span>
+            <div className="flex items-center gap-2">
+  <span className="text-xs font-mono font-bold tracking-widest text-emerald-400 uppercase">
+    AI Production Forecast
+  </span>
+
+  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-mono font-bold text-emerald-400">
+    LIVE ML
+  </span>
+</div>
           </div>
           <h2 className="text-xl font-black text-white tracking-tight mt-0.5">
             Shortfall Prediction Analysis

@@ -1,49 +1,70 @@
 /**
  * Centralized API Service for ManganAI Platform
- * Connects to FastAPI backend at http://127.0.0.1:8000
- * Gracefully falls back to realistic mock datasets when FastAPI is unavailable.
+ * Production version:
+ *
+ * Vercel → FastAPI/Render → Database / Trained ML Models
+ *
+ * IMPORTANT:
+ * No mock/demo fallback is used.
  */
 
-import { MOIL_MINES } from '../data/mines';
-import { EXPLORATION_ZONES } from '../data/exploration';
-import { CURRENT_CONDITIONS, OPERATIONAL_FACTOR_INDICATORS, PRODUCTION_HISTORY } from '../data/production';
-import { EQUIPMENT_SUMMARY, EQUIPMENT_LIST } from '../data/equipment';
-import { HAULAGE_SUMMARY, HAULAGE_AVAILABILITY_TREND, HAULAGE_ROUTE_METRICS } from '../data/haulage';
-import { CURRENT_WEATHER, WEATHER_FORECAST, ENVIRONMENTAL_IMPACTS, SATELLITE_LAYERS } from '../data/weather';
-import { RISK_OVERVIEW, RISK_CONTRIBUTORS, SEVEN_DAY_RISK_FORECAST } from '../data/risk';
-import { AI_RECOMMENDATIONS } from '../data/recommendations';
-import { calculateMLShortfallPrediction, calculateMLReservePrediction } from '../data/predictions';
+const isLocalHost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1');
 
-
-const isLocalHost = typeof window !== 'undefined' &&
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const LOCAL_API_URL = 'http://127.0.0.1:8001';
+const PRODUCTION_API_URL = 'https://ps9-backend.onrender.com';
 
 const DEFAULT_BASE_URL = isLocalHost
-  ? 'http://127.0.0.1:8001'
-  : (import.meta.env?.VITE_API_BASE_URL || 'https://ps9-backend.onrender.com');
+  ? LOCAL_API_URL
+  : (import.meta.env?.VITE_API_BASE_URL || PRODUCTION_API_URL);
 
 export function getBaseUrl() {
-  const saved = localStorage.getItem('manganai_backend_url');
-  // If running on localhost and saved points to remote, prefer local
-  if (isLocalHost && (!saved || saved.includes('onrender.com'))) {
-    return 'http://127.0.0.1:8001';
+  // Only allow localStorage override during local development.
+  if (isLocalHost) {
+    const saved = localStorage.getItem('manganai_backend_url');
+
+    if (saved) {
+      return saved.replace(/\/$/, '');
+    }
+
+    return LOCAL_API_URL;
   }
-  return saved || DEFAULT_BASE_URL;
+
+  // Production ALWAYS uses Vercel environment variable
+  // or the Render backend.
+  return DEFAULT_BASE_URL.replace(/\/$/, '');
 }
 
 export function setBaseUrl(url) {
-  localStorage.setItem('manganai_backend_url', url);
+  if (!isLocalHost) {
+    console.warn('[API] Backend URL override is disabled in production.');
+    return;
+  }
+
+  localStorage.setItem(
+    'manganai_backend_url',
+    url.replace(/\/$/, '')
+  );
 }
 
-// Simulated network delay helper for realistic UI responsiveness
-const delay = (ms = 350) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Safe fetch wrapper with timeout
-async function safeFetch(endpoint, options = {}, timeoutMs = 4000) {
+/**
+ * Generic API request
+ */
+async function safeFetch(endpoint, options = {}, timeoutMs = 10000) {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  const url = `${getBaseUrl()}${endpoint}`;
+
   try {
-    const res = await fetch(`${getBaseUrl()}${endpoint}`, {
+    console.log(`[API] ${options.method || 'GET'} ${url}`);
+
+    const response = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -51,131 +72,111 @@ async function safeFetch(endpoint, options = {}, timeoutMs = 4000) {
       },
       signal: controller.signal
     });
-    clearTimeout(id);
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    return await res.json();
-  } catch (err) {
-    clearTimeout(id);
-    throw err;
+
+    if (!response.ok) {
+      let detail = '';
+
+      try {
+        const errorData = await response.json();
+        detail =
+          errorData.detail ||
+          errorData.message ||
+          JSON.stringify(errorData);
+      } catch {
+        detail = await response.text().catch(() => '');
+      }
+
+      throw new Error(
+        `Backend error ${response.status}: ${detail || response.statusText}`
+      );
+    }
+
+    return await response.json();
+
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(
+        `Backend request timed out after ${timeoutMs / 1000}s`
+      );
+    }
+
+    throw error;
+
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
 /**
- * 1. Health check & System Status
- * Automatically tests primary URL and alternative ports (8000, 8001).
+ * 1. Backend health check
  */
 export async function getSystemStatus() {
-  const candidateUrls = [
-    getBaseUrl(),
-    'https://ps9-backend.onrender.com',
-    'http://127.0.0.1:8001',
-    'http://127.0.0.1:8000'
-  ];
-  const uniqueUrls = [...new Set(candidateUrls)];
+  const baseUrl = getBaseUrl();
 
-  for (const url of uniqueUrls) {
+  try {
+    let response;
+
+    // Try /health first
     try {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 1200);
-      const res = await fetch(`${url}/health`, { signal: controller.signal });
-      clearTimeout(id);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.status === 'healthy') {
-          // If a different port answered, adopt it
-          if (url !== getBaseUrl() && !localStorage.getItem('manganai_backend_url')) {
-            setBaseUrl(url);
-          }
-          return {
-            online: true,
-            mode: 'ONLINE',
-            message: `FastAPI Backend Connected (${data.engine || 'Active'})`,
-            backendUrl: url,
-            version: data.version || '1.0.0'
-          };
-        }
-      }
+      response = await safeFetch('/health', {}, 5000);
     } catch {
-      // Continue checking next candidate
+      // Some versions of main.py expose health at "/"
+      response = await safeFetch('/', {}, 5000);
     }
-  }
 
-  return {
-    online: false,
-    mode: 'DEMO',
-    message: 'Running in High-Fidelity Demo Mode (FastAPI Offline)',
-    backendUrl: getBaseUrl(),
-    version: '1.0.0-mock'
-  };
-}
-
-/**
- * 2. Get list of all MOIL mines
- */
-export async function getMines() {
-  try {
-    return await safeFetch('/api/mines');
-  } catch {
-    await delay(150);
-    return MOIL_MINES;
-  }
-}
-
-/**
- * 3. Get comprehensive dashboard payload for a specific mine
- */
-export async function getDashboard(mineId = 'BALAGHAT-01') {
-  try {
-    return await safeFetch(`/api/dashboard?mine_id=${mineId}`);
-  } catch {
-    await delay(200);
-    const mine = MOIL_MINES.find(m => m.id === mineId) || MOIL_MINES[0];
     return {
-      mine,
-      kpis: {
-        estimatedReserveMT: mine.reserveMT,
-        todayProductionTonnes: mine.currentProduction,
-        predictedProductionTonnes: mine.predictedProduction,
-        expectedShortfallTonnes: mine.expectedShortfall,
-        shortfallPercentage: mine.shortfallPct,
-        overallRisk: mine.riskLevel,
-        confidence: mine.confidence
-      },
-      currentConditions: CURRENT_CONDITIONS,
-      factors: OPERATIONAL_FACTOR_INDICATORS,
-      history: PRODUCTION_HISTORY['7d'],
-      shortfallForecast: {
-        expectedShortfall: mine.expectedShortfall,
-        risk: mine.riskLevel,
-        confidence: mine.confidence,
-        concerns: ["Equipment downtime (EX-017)", "Monsoon rainfall runoff", "Blast fume clearance delay"]
-      }
+      online: true,
+      mode: 'ONLINE',
+      message: `FastAPI Backend Connected (${response.engine || 'Active'})`,
+      backendUrl: baseUrl,
+      version: response.version || '1.0.0'
+    };
+
+  } catch (error) {
+    console.error('[API] Backend health check failed:', error);
+
+    return {
+      online: false,
+      mode: 'OFFLINE',
+      message: error.message || 'FastAPI Backend Unavailable',
+      backendUrl: baseUrl,
+      version: 'unknown'
     };
   }
 }
 
 /**
- * 4. Get Exploration Zones
+ * 2. Get mines
  */
-export async function getExplorationZones() {
-  try {
-    return await safeFetch('/api/exploration/zones');
-  } catch {
-    await delay(200);
-    return EXPLORATION_ZONES;
-  }
+export async function getMines() {
+  return await safeFetch('/api/mines');
 }
 
 /**
- * 5. Get details for a single exploration zone
+ * 3. Dashboard
+ */
+export async function getDashboard(
+  mineId = 'BALAGHAT-01'
+) {
+  return await safeFetch(
+    `/api/dashboard?mine_id=${encodeURIComponent(mineId)}`
+  );
+}
+
+/**
+ * 4. Exploration zones
+ */
+export async function getExplorationZones() {
+  return await safeFetch('/api/exploration/zones');
+}
+
+/**
+ * 5. Single exploration zone
  */
 export async function getExplorationZone(zoneId) {
-  try {
-    return await safeFetch(`/api/exploration/zones/${zoneId}`);
-  } catch {
-    await delay(150);
-    return EXPLORATION_ZONES.find(z => z.id === zoneId) || EXPLORATION_ZONES[0];
-  }
+  return await safeFetch(
+    `/api/exploration/zones/${encodeURIComponent(zoneId)}`
+  );
 }
 
 /**
@@ -184,178 +185,217 @@ export async function getExplorationZone(zoneId) {
 export async function predictReserve(inputs) {
   const normalizedInputs = {
     ...inputs,
-    latitude: Number(inputs.latitude ?? inputs.lat ?? 21.8710),
-    longitude: Number(inputs.longitude ?? inputs.lon ?? 80.1830),
-    lat: Number(inputs.latitude ?? inputs.lat ?? 21.8710),
-    lon: Number(inputs.longitude ?? inputs.lon ?? 80.1830),
+
+    latitude: Number(
+      inputs.latitude ?? inputs.lat ?? 21.8710
+    ),
+
+    longitude: Number(
+      inputs.longitude ?? inputs.lon ?? 80.1830
+    ),
+
+    lat: Number(
+      inputs.latitude ?? inputs.lat ?? 21.8710
+    ),
+
+    lon: Number(
+      inputs.longitude ?? inputs.lon ?? 80.1830
+    )
   };
-  try {
-    return await safeFetch('/api/ml/predict-reserve', {
+
+  return await safeFetch(
+    '/api/ml/predict-reserve',
+    {
       method: 'POST',
       body: JSON.stringify(normalizedInputs)
-    }, 4000);
-  } catch {
-    try {
-      return await safeFetch('/predict_reserve', {
-        method: 'POST',
-        body: JSON.stringify(normalizedInputs)
-      }, 4000);
-    } catch (err) {
-      console.warn('[API] ML predictReserve fallback to local heuristic calculation:', err);
-      await delay(400);
-      return calculateMLReservePrediction(normalizedInputs);
-    }
-  }
+    },
+    15000
+  );
 }
 
 /**
- * 7. Get Production summary
+ * 7. Production summary
  */
-export async function getProduction(mineId = 'BALAGHAT-01') {
-  try {
-    return await safeFetch(`/api/production?mine_id=${mineId}`);
-  } catch {
-    await delay(150);
-    return {
-      conditions: CURRENT_CONDITIONS,
-      factors: OPERATIONAL_FACTOR_INDICATORS
-    };
-  }
+export async function getProduction(
+  mineId = 'BALAGHAT-01'
+) {
+  return await safeFetch(
+    `/api/production?mine_id=${encodeURIComponent(mineId)}`
+  );
 }
 
 /**
- * 8. Get Production Trends (7d, 30d, 90d)
+ * 8. Production trends
  */
-export async function getProductionTrends(timeframe = '7d') {
-  try {
-    return await safeFetch(`/api/production/trends?timeframe=${timeframe}`);
-  } catch {
-    await delay(180);
-    return PRODUCTION_HISTORY[timeframe] || PRODUCTION_HISTORY['7d'];
-  }
+export async function getProductionTrends(
+  timeframe = '7d'
+) {
+  return await safeFetch(
+    `/api/production/trends?timeframe=${encodeURIComponent(timeframe)}`
+  );
 }
 
 /**
- * 9. ML Production Shortfall Prediction
- * Takes all 11 required input parameters with robust field normalization.
+ * 9. REAL ML Production Shortfall Prediction
+ *
+ * IMPORTANT:
+ * There is NO local/demo prediction here.
+ *
+ * Whatever the backend returns comes from
+ * the FastAPI ML pipeline.
  */
 export async function predictShortfall(payload) {
-  const rainVal = Number(payload.rainfall ?? payload.rainfall_mm ?? 20);
-  const soilVal = Number(payload.soil_moisture ?? payload.soilMoisture ?? 50);
-  const availVal = Number(payload.equipment_availability ?? payload.equipmentAvailability ?? 85);
-  const downVal = Number(payload.equipment_downtime ?? payload.equipmentDowntime ?? 5);
-  const truckVal = Number(payload.haulage_truck_count ?? payload.truck_count ?? payload.haulageTruckCount ?? 25);
-  const targetVal = Number(payload.production_target ?? payload.target_production ?? payload.productionTarget ?? 10000);
 
   const normalizedPayload = {
     ...payload,
-    rainfall: rainVal,
-    rainfall_mm: rainVal,
-    soil_moisture: soilVal,
-    soilMoisture: soilVal,
-    equipment_availability: availVal,
-    equipmentAvailability: availVal,
-    equipment_downtime: downVal,
-    equipmentDowntime: downVal,
-    haulage_truck_count: truckVal,
-    truck_count: truckVal,
-    haulageTruckCount: truckVal,
-    production_target: targetVal,
-    target_production: targetVal,
-    productionTarget: targetVal
+
+    mine_id:
+      payload.mine_id || 'BALAGHAT-01',
+
+    date:
+      payload.date ||
+      new Date().toISOString().split('T')[0],
+
+    production_target: Number(
+      payload.production_target ??
+      payload.target_production ??
+      payload.productionTarget ??
+      10000
+    ),
+
+    rainfall: Number(
+      payload.rainfall ??
+      payload.rainfall_mm ??
+      0
+    ),
+
+    soil_moisture: Number(
+      payload.soil_moisture ??
+      payload.soilMoisture ??
+      0
+    ),
+
+    temperature: Number(
+      payload.temperature ?? 0
+    ),
+
+    equipment_availability: Number(
+      payload.equipment_availability ??
+      payload.equipmentAvailability ??
+      0
+    ),
+
+    equipment_downtime: Number(
+      payload.equipment_downtime ??
+      payload.equipmentDowntime ??
+      0
+    ),
+
+    equipment_utilization: Number(
+      payload.equipment_utilization ??
+      payload.equipmentUtilization ??
+      0
+    ),
+
+    maintenance_hours: Number(
+      payload.maintenance_hours ??
+      payload.maintenanceHours ??
+      0
+    ),
+
+    haulage_truck_count: Number(
+      payload.haulage_truck_count ??
+      payload.truck_count ??
+      payload.haulageTruckCount ??
+      0
+    ),
+
+    drilling_delay: Number(
+      payload.drilling_delay ??
+      payload.drillingDelay ??
+      0
+    ),
+
+    blast_delay: Number(
+      payload.blast_delay ??
+      payload.blastDelay ??
+      0
+    )
   };
 
-  try {
-    return await safeFetch('/api/ml/predict-shortfall', {
+  console.log(
+    '[ML] Sending REAL shortfall prediction request:',
+    normalizedPayload
+  );
+
+  const result = await safeFetch(
+    '/api/ml/predict-shortfall',
+    {
       method: 'POST',
       body: JSON.stringify(normalizedPayload)
-    }, 4000);
-  } catch {
-    try {
-      return await safeFetch('/predict_shortfall', {
-        method: 'POST',
-        body: JSON.stringify(normalizedPayload)
-      }, 4000);
-    } catch (err) {
-      console.warn('[API] ML predictShortfall fallback to local simulation:', err);
-      await delay(400);
-      return calculateMLShortfallPrediction(normalizedPayload);
-    }
-  }
+    },
+    20000
+  );
+
+  console.log(
+    '[ML] REAL shortfall prediction response:',
+    result
+  );
+
+  return result;
 }
 
 /**
- * 10. Get Equipment Fleet telemetry
+ * 10. Equipment
  */
-export async function getEquipment(mineId = 'BALAGHAT-01') {
-  try {
-    return await safeFetch(`/api/equipment?mine_id=${mineId}`);
-  } catch {
-    await delay(200);
-    return {
-      summary: EQUIPMENT_SUMMARY,
-      equipment: EQUIPMENT_LIST
-    };
-  }
+export async function getEquipment(
+  mineId = 'BALAGHAT-01'
+) {
+  return await safeFetch(
+    `/api/equipment?mine_id=${encodeURIComponent(mineId)}`
+  );
 }
 
 /**
- * 11. Get Haulage fleet monitoring data
+ * 11. Haulage
  */
-export async function getHaulageData(mineId = 'BALAGHAT-01') {
-  try {
-    return await safeFetch(`/api/haulage?mine_id=${mineId}`);
-  } catch {
-    await delay(180);
-    return {
-      summary: HAULAGE_SUMMARY,
-      trends: HAULAGE_AVAILABILITY_TREND,
-      routes: HAULAGE_ROUTE_METRICS
-    };
-  }
+export async function getHaulageData(
+  mineId = 'BALAGHAT-01'
+) {
+  return await safeFetch(
+    `/api/haulage?mine_id=${encodeURIComponent(mineId)}`
+  );
 }
 
 /**
- * 12. Get Space & Weather satellite data
+ * 12. Weather
  */
-export async function getWeather(mineId = 'BALAGHAT-01') {
-  try {
-    return await safeFetch(`/api/weather?mine_id=${mineId}`);
-  } catch {
-    await delay(200);
-    return {
-      current: CURRENT_WEATHER,
-      forecast: WEATHER_FORECAST,
-      impacts: ENVIRONMENTAL_IMPACTS,
-      layers: SATELLITE_LAYERS
-    };
-  }
+export async function getWeather(
+  mineId = 'BALAGHAT-01'
+) {
+  return await safeFetch(
+    `/api/weather?mine_id=${encodeURIComponent(mineId)}`
+  );
 }
 
 /**
- * 13. Get Risk analysis and 7-day forecast
+ * 13. Risk
  */
-export async function getRisk(mineId = 'BALAGHAT-01') {
-  try {
-    return await safeFetch(`/api/risk?mine_id=${mineId}`);
-  } catch {
-    await delay(200);
-    return {
-      overview: RISK_OVERVIEW,
-      contributors: RISK_CONTRIBUTORS,
-      forecast: SEVEN_DAY_RISK_FORECAST
-    };
-  }
+export async function getRisk(
+  mineId = 'BALAGHAT-01'
+) {
+  return await safeFetch(
+    `/api/risk?mine_id=${encodeURIComponent(mineId)}`
+  );
 }
 
 /**
- * 14. Get AI Decision Support Recommendations
+ * 14. Recommendations
  */
-export async function getRecommendations(mineId = 'BALAGHAT-01') {
-  try {
-    return await safeFetch(`/api/recommendations?mine_id=${mineId}`);
-  } catch {
-    await delay(200);
-    return AI_RECOMMENDATIONS;
-  }
+export async function getRecommendations(
+  mineId = 'BALAGHAT-01'
+) {
+  return await safeFetch(
+    `/api/recommendations?mine_id=${encodeURIComponent(mineId)}`
+  );
 }
